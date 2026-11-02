@@ -34,3 +34,6 @@ android/captures/
 *.apk
 *.aab
 .cxx/
+xtool/
+.bsp/
+.build/

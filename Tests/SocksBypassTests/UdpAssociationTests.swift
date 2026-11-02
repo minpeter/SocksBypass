@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 import Network
 import XCTest
+@testable import SocksBypass
 
 final class UdpAssociationTests: XCTestCase {
     func testDatagramHeaderRoundTripsAllAddressTypes() throws {

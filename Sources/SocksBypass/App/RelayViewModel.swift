@@ -11,6 +11,7 @@ import Darwin
 @MainActor
 final class RelayViewModel: ObservableObject {
     enum Status: Equatable {
+        case stopped
         case starting
         case listening(port: UInt16)
         case failed(String)
@@ -52,8 +53,56 @@ final class RelayViewModel: ObservableObject {
     private var timer: Timer?
     private var lastSample: (upload: UInt64, download: UInt64, at: Date)?
 
+    var isRunning: Bool {
+        switch status {
+        case .starting, .listening: return true
+        case .stopped, .failed: return false
+        }
+    }
+
+    /// Stops listening, drops every live session, and releases the background
+    /// audio session so a stopped proxy costs no battery.
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        keepAlive.stop()
+        backgroundActive = false
+        isStopping = true
+        relay.stop { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.isStopping = false
+                self.status = .stopped
+                self.activeTCP = 0
+                self.activeUDP = 0
+            }
+        }
+        endpoints = []
+        uploadBytesPerSecond = 0
+        downloadBytesPerSecond = 0
+        lastSample = nil
+        append("stopped")
+    }
+
+    @Published private(set) var isStopping = false
+
+    /// Start/stop button. A failed listener is torn down first so a retry
+    /// starts from a clean relay instead of hitting `alreadyRunning`.
+    func toggle() {
+        guard !isStopping else { return }
+        if case .failed = status {
+            stop()
+            relay.stop { [weak self] in Task { @MainActor in self?.start() } }
+        } else if isRunning {
+            stop()
+        } else {
+            start()
+        }
+    }
+
     func start() {
-        guard timer == nil else { return }
+        guard timer == nil, !isStopping else { return }
+        status = .starting
         relay.eventHandler = { [weak self] event in
             Task { @MainActor in
                 guard let self else { return }

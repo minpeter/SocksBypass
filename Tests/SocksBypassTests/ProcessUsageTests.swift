@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+@testable import SocksBypass
 
 final class ProcessUsageTests: XCTestCase {
     func testCPUIsCumulativeAndPeakRSSIsReportedInBytes() {

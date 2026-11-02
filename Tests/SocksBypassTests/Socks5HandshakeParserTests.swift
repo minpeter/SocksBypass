@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+@testable import SocksBypass
 
 final class Socks5HandshakeParserTests: XCTestCase {
     private let greeting = Data([0x05, 0x01, 0x00])

@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import XCTest
+@testable import SocksBypass
 
 final class NetworkTCPRelayTests: XCTestCase {
     func testLoopbackHalfCloseCountersStopAndRestart() throws {

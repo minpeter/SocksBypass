@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+@testable import SocksBypass
 
 final class TrafficCountersTests: XCTestCase {
     func testDirectionAndExactCommittedPayloadBytes() {
