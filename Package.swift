@@ -10,7 +10,7 @@ let package = Package(
         .library(name: "SocksBypass", targets: ["SocksBypass"]),
     ],
     targets: [
-        .target(name: "SocksBypass"),
+        .target(name: "SocksBypass", resources: [.copy("Resources/Fonts")]),
         .testTarget(name: "SocksBypassTests", dependencies: ["SocksBypass"]),
     ],
     swiftLanguageModes: [.v5]

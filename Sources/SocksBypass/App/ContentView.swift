@@ -11,7 +11,15 @@ private enum G {
     static let green = Color(red: 0, green: 0.67, blue: 0.47)
     static let red = Color(red: 0.9, green: 0.2, blue: 0.2)
     static let radius: CGFloat = 10
-    static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font { .system(size: size, weight: weight, design: .monospaced) }
+    static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font { .custom("GeistMono-" + face(weight), size: size) }
+    static func sans(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font { .custom("Geist-" + face(weight), size: size) }
+    private static func face(_ weight: Font.Weight) -> String {
+        switch weight {
+        case .semibold, .bold, .heavy, .black: return "SemiBold"
+        case .medium: return "Medium"
+        default: return "Regular"
+        }
+    }
 }
 
 struct ContentView: View {
@@ -45,7 +53,7 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("SocksBypass").font(.system(size: 28, weight: .semibold)).tracking(-1)
+                Text("SocksBypass").font(G.sans(28, .semibold)).tracking(-1)
                 Text("v\(RelayViewModel.appVersion)").font(G.mono(12)).foregroundStyle(G.muted)
             }
             Spacer()
@@ -71,10 +79,10 @@ struct ContentView: View {
         let (text, color) = statusInfo
         return HStack(spacing: 8) {
             Circle().fill(color).frame(width: 8, height: 8)
-            Text(text).font(.system(size: 14, weight: .medium))
+            Text(text).font(G.sans(14, .medium))
             if model.isRunning {
                 Text(model.backgroundActive ? "· 백그라운드 유지" : "· 포그라운드에서만")
-                    .font(.system(size: 14)).foregroundStyle(G.muted)
+                    .font(G.sans(14)).foregroundStyle(G.muted)
             }
         }
     }
@@ -83,7 +91,7 @@ struct ContentView: View {
 
     private func card<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.system(size: 12)).tracking(0.6).foregroundStyle(G.muted)
+            Text(title).font(G.sans(12)).tracking(0.6).foregroundStyle(G.muted)
             content()
         }
         .padding(16)
@@ -97,7 +105,7 @@ struct ContentView: View {
         card("주소") {
             if model.endpoints.isEmpty {
                 Text("접속 가능한 주소가 없습니다. 핫스팟이나 Wi-Fi를 켜세요.")
-                    .font(.system(size: 13)).foregroundStyle(G.muted)
+                    .font(G.sans(13)).foregroundStyle(G.muted)
             } else {
                 ForEach(Array(model.endpoints.enumerated()), id: \.element.id) { index, endpoint in
                     if index > 0 { hairline }
@@ -111,7 +119,7 @@ struct ContentView: View {
         card("인증") {
             if model.authEnabled {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("사용자").font(.system(size: 12)).foregroundStyle(G.muted)
+                    Text("사용자").font(G.sans(12)).foregroundStyle(G.muted)
                     Text(RelayViewModel.username).font(G.mono(15))
                 }
                 copyRow("토큰", model.token, id: "token", size: 15)
@@ -127,7 +135,7 @@ struct ContentView: View {
     private func copyRow(_ label: String, _ value: String, id: String, size: CGFloat) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(.system(size: 12)).foregroundStyle(G.muted)
+                Text(label).font(G.sans(12)).foregroundStyle(G.muted)
                 Text(value).font(G.mono(size, .medium)).textSelection(.enabled).lineLimit(1).minimumScaleFactor(0.7)
             }
             Spacer()
@@ -135,7 +143,7 @@ struct ContentView: View {
                 UIPasteboard.general.string = value
                 copiedID = id
             } label: {
-                Text(copiedID == id ? "복사됨" : "복사").font(.system(size: 13, weight: .medium)).foregroundStyle(G.fg)
+                Text(copiedID == id ? "복사됨" : "복사").font(G.sans(13, .medium)).foregroundStyle(G.fg)
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(G.border, lineWidth: 1))
             }
@@ -170,7 +178,7 @@ struct ContentView: View {
 
     private func cell(_ label: String, _ value: String, _ sub: String?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 12)).foregroundStyle(G.muted)
+            Text(label).font(G.sans(12)).foregroundStyle(G.muted)
             Text(value).font(G.mono(18, .medium)).lineLimit(1).minimumScaleFactor(0.6).contentTransition(.numericText())
             if let sub { Text(sub).font(G.mono(12)).foregroundStyle(G.muted) }
         }
@@ -187,7 +195,7 @@ struct ContentView: View {
             Text(open
                  ? "인증이 꺼져 있습니다. 이 주소에 닿는 누구나 이 회선을 쓸 수 있습니다. 내 핫스팟에서만 사용하세요."
                  : "트래픽은 암호화되지 않습니다. 직접 관리하는 핫스팟에서만 사용하세요.")
-                .font(.system(size: 13)).foregroundStyle(open ? G.red : G.muted)
+                .font(G.sans(13)).foregroundStyle(open ? G.red : G.muted)
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -217,7 +225,7 @@ struct ContentView: View {
     private var controlButton: some View {
         Button { model.toggle() } label: {
             Text(model.isRunning ? "정지" : "시작")
-                .font(.system(size: 16, weight: .semibold))
+                .font(G.sans(16, .semibold))
                 .foregroundStyle(G.bg)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .background(G.fg, in: RoundedRectangle(cornerRadius: G.radius))

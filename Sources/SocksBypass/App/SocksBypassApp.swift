@@ -8,6 +8,10 @@ import Foundation
 struct SocksBypassApp: App {
     @StateObject private var model = RelayViewModel()
 
+    init() {
+        GeistFonts.register()
+    }
+
     var body: some Scene {
         WindowGroup {
             shell

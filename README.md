@@ -1,4 +1,4 @@
-> **minpeter fork**: iOS app ported to an [xtool](https://github.com/xtool-org/xtool) SwiftPM layout (`Package.swift` + `xtool.yml`, build on Linux with `xtool dev build`), Xcode project and HEV benchmark vendoring removed, refreshed Korean-first SwiftUI with start/stop and copy buttons. Original work by Nanako0129, MIT.
+> **minpeter fork**: iOS app ported to an [xtool](https://github.com/xtool-org/xtool) SwiftPM layout (`Package.swift` + `xtool.yml`, build on Linux with `xtool dev build`), Xcode project and HEV benchmark vendoring removed, refreshed Korean-first SwiftUI with start/stop and copy buttons. Original work by Nanako0129, MIT. Bundles Geist / Geist Mono by Vercel under the SIL Open Font License 1.1 (`ThirdPartyNotices/Geist-OFL.txt`).
 
 # SocksBypass
 
