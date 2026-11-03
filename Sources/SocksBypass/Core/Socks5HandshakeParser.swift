@@ -33,9 +33,19 @@ struct Socks5HandshakeParser {
         case domain
     }
 
+    /// RFC 1929 username/password. `nil` means NO AUTH.
+    struct Credentials: Equatable {
+        let username: String
+        let password: String
+    }
+
     private enum Phase {
         case greetingHeader
         case greetingMethods(Int)
+        case authHeader
+        case authUsername(Int)
+        case authPasswordLength
+        case authPassword(Int)
         case requestHeader
         case requestDomainLength
         /// Address kind plus the byte count still to read: address bytes and the port.
@@ -44,7 +54,13 @@ struct Socks5HandshakeParser {
         case closed
     }
 
+    private let credentials: Credentials?
     private var phase = Phase.greetingHeader
+    private var offeredUsername = Data()
+
+    init(credentials: Credentials? = nil) {
+        self.credentials = credentials
+    }
     private var pendingCommand = Command.connect
     private var buffer = Data()
 
@@ -88,16 +104,56 @@ struct Socks5HandshakeParser {
 
             case .greetingMethods(let methodCount):
                 guard appendNeeded(methodCount, from: data, offset: &offset) else { break }
-                let supportsNoAuth = buffer.contains(0x00)
+                let wanted: UInt8 = credentials == nil ? 0x00 : 0x02
+                let supported = buffer.contains(wanted)
                 buffer.removeAll(keepingCapacity: true)
 
-                guard supportsNoAuth else {
+                guard supported else {
                     output.replies.append(Data([0x05, 0xFF]))
                     close(&output)
                     continue
                 }
-                output.replies.append(Data([0x05, 0x00]))
-                phase = .requestHeader
+                output.replies.append(Data([0x05, wanted]))
+                phase = credentials == nil ? .requestHeader : .authHeader
+
+            case .authHeader:
+                guard appendNeeded(2, from: data, offset: &offset) else { break }
+                let version = buffer[buffer.startIndex]
+                let length = Int(buffer[buffer.index(after: buffer.startIndex)])
+                buffer.removeAll(keepingCapacity: true)
+                guard version == 0x01 else {
+                    output.replies.append(Data([0x01, 0x01]))
+                    close(&output)
+                    continue
+                }
+                if length == 0 {
+                    offeredUsername = Data()
+                    phase = .authPasswordLength
+                } else {
+                    phase = .authUsername(length)
+                }
+
+            case .authUsername(let length):
+                guard appendNeeded(length, from: data, offset: &offset) else { break }
+                offeredUsername = buffer
+                buffer.removeAll(keepingCapacity: true)
+                phase = .authPasswordLength
+
+            case .authPasswordLength:
+                guard appendNeeded(1, from: data, offset: &offset) else { break }
+                let length = Int(buffer[buffer.startIndex])
+                buffer.removeAll(keepingCapacity: true)
+                if length == 0 {
+                    finishAuth(password: Data(), &output)
+                } else {
+                    phase = .authPassword(length)
+                }
+
+            case .authPassword(let length):
+                guard appendNeeded(length, from: data, offset: &offset) else { break }
+                let password = buffer
+                buffer.removeAll(keepingCapacity: true)
+                finishAuth(password: password, &output)
 
             case .requestHeader:
                 guard appendNeeded(4, from: data, offset: &offset) else { break }
@@ -235,6 +291,27 @@ struct Socks5HandshakeParser {
         return buffer.count == requiredCount
     }
 
+    private mutating func finishAuth(password: Data, _ output: inout Output) {
+        let username = offeredUsername
+        offeredUsername = Data()
+        guard let credentials,
+              Self.constantTimeEqual(username, Data(credentials.username.utf8)),
+              Self.constantTimeEqual(password, Data(credentials.password.utf8)) else {
+            output.replies.append(Data([0x01, 0x01]))
+            close(&output)
+            return
+        }
+        output.replies.append(Data([0x01, 0x00]))
+        phase = .requestHeader
+    }
+
+    static func constantTimeEqual(_ a: Data, _ b: Data) -> Bool {
+        guard a.count == b.count else { return false }
+        var diff: UInt8 = 0
+        for (x, y) in zip(a, b) { diff |= x ^ y }
+        return diff == 0
+    }
+
     private mutating func close(_ output: inout Output) {
         buffer.removeAll(keepingCapacity: false)
         phase = .closed
@@ -246,6 +323,8 @@ struct Socks5HandshakeParser {
         switch phase {
         case .greetingHeader, .greetingMethods:
             output.replies.append(Data([0x05, 0xFF]))
+        case .authHeader, .authUsername, .authPasswordLength, .authPassword:
+            output.replies.append(Data([0x01, 0x01]))
         case .requestHeader, .requestDomainLength, .requestAddress:
             output.replies.append(Self.requestReply(0x01))
         case .active, .closed:

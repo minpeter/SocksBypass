@@ -41,6 +41,9 @@ final class NetworkTCPRelay {
     private var generation = 0
     private var startCompletion: ((Result<UInt16, RelayError>) -> Void)?
     private var stopCompletions: [() -> Void] = []
+    /// Credentials required by sessions of the current run; `nil` = NO AUTH.
+    /// Only touched on `queue`.
+    private var credentials: Socks5HandshakeParser.Credentials?
     /// Invoked on the relay queue. Set before `start`.
     var eventHandler: ((Event) -> Void)?
 
@@ -56,7 +59,13 @@ final class NetworkTCPRelay {
         counters = TrafficCounters(queue: queue, enabled: countingEnabled)
     }
 
-    func start(_ completion: @escaping (Result<UInt16, RelayError>) -> Void) {
+    /// `bonjour`: advertise the listener as this DNS-SD service type with the
+    /// given TXT record while it is up.
+    func start(
+        credentials: Socks5HandshakeParser.Credentials? = nil,
+        bonjour: (type: String, txt: [String: String])? = nil,
+        _ completion: @escaping (Result<UInt16, RelayError>) -> Void
+    ) {
         queue.async {
             guard self.state == .stopped else {
                 completion(.failure(.alreadyRunning))
@@ -80,6 +89,15 @@ final class NetworkTCPRelay {
                 return
             }
 
+            if let bonjour {
+                listener.service = NWListener.Service(
+                    name: nil,
+                    type: bonjour.type,
+                    domain: nil,
+                    txtRecord: NWTXTRecord(bonjour.txt).data
+                )
+            }
+            self.credentials = credentials
             self.generation += 1
             let generation = self.generation
             self.state = .starting
@@ -144,6 +162,7 @@ final class NetworkTCPRelay {
             client: connection,
             queue: queue,
             counters: counters,
+            credentials: credentials,
             emit: { [weak self] event in self?.eventHandler?(event) }
         ) { [weak self] closedID in
             self?.sessions.removeValue(forKey: closedID)
@@ -252,7 +271,7 @@ private final class RelaySession {
     private let counters: TrafficCounters
     private let emit: (NetworkTCPRelay.Event) -> Void
     private let didClose: (UUID) -> Void
-    private var parser = Socks5HandshakeParser()
+    private var parser: Socks5HandshakeParser
     private var target: NWConnection?
     private var udpAssociation: UdpAssociation?
     private var pendingInitialPayload = Data()
@@ -299,9 +318,11 @@ private final class RelaySession {
         client: NWConnection,
         queue: DispatchQueue,
         counters: TrafficCounters,
+        credentials: Socks5HandshakeParser.Credentials?,
         emit: @escaping (NetworkTCPRelay.Event) -> Void,
         didClose: @escaping (UUID) -> Void
     ) {
+        parser = Socks5HandshakeParser(credentials: credentials)
         self.id = id
         self.client = client
         self.queue = queue

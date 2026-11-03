@@ -5,13 +5,17 @@
     <key>CFBundleDisplayName</key>
     <string>SocksBypass</string>
     <key>CFBundleShortVersionString</key>
-    <string>2.1.0</string>
+    <string>2.2.0</string>
     <key>UIBackgroundModes</key>
     <array>
         <string>audio</string>
     </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>핫스팟/Wi-Fi에 연결된 기기가 이 SOCKS5 프록시에 접속하려면 필요합니다.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_socksbypass._tcp</string>
+    </array>
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>

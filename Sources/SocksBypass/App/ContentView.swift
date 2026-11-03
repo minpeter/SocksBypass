@@ -4,6 +4,7 @@ import UIKit
 struct ContentView: View {
     @ObservedObject var model: RelayViewModel
     @State private var copiedID: String?
+    @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
@@ -14,6 +15,7 @@ struct ContentView: View {
                     if case .listening(let port) = model.status {
                         addressCard(port: port)
                     }
+                    credentialsCard
                     trafficCard
                     sessionsCard
                     activityCard
@@ -23,6 +25,10 @@ struct ContentView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("SocksBypass")
             .safeAreaInset(edge: .bottom) { controlButton }
+            .toolbar {
+                Button { showSettings = true } label: { Image(systemName: "gearshape") }
+            }
+            .sheet(isPresented: $showSettings) { SettingsSheet(model: model) }
         }
     }
 
@@ -57,17 +63,52 @@ struct ContentView: View {
         }
     }
 
-    /// Always visible, never dismissible: the proxy is unauthenticated.
+    /// Always visible, never dismissible. Louder when auth is off.
     private var warningCard: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            Text("비밀번호가 없는 프록시입니다. 이 주소에 닿을 수 있는 누구나 사용할 수 있으니, 내 휴대폰 핫스팟처럼 직접 관리하는 네트워크에서만 켜세요.")
+        let open = !model.authEnabled
+        let tint: Color = open ? .red : .orange
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: open ? "lock.open.trianglebadge.exclamationmark" : "exclamationmark.triangle.fill")
+                .foregroundStyle(tint)
+            Text(open
+                 ? "인증이 꺼져 있습니다(NO AUTH). 이 주소에 닿을 수 있는 누구나 이 휴대폰 회선으로 트래픽을 보낼 수 있습니다. 내 핫스팟에서만 쓰세요."
+                 : "토큰이 있는 사람만 접속할 수 있지만 트래픽은 암호화되지 않습니다. 내 휴대폰 핫스팟처럼 직접 관리하는 네트워크에서만 켜세요.")
                 .font(.footnote)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.orange.opacity(0.4)))
+        .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(tint.opacity(0.4)))
+    }
+
+    private var credentialsCard: some View {
+        card(title: "인증", icon: "key.fill") {
+            if model.authEnabled {
+                credentialRow("사용자", RelayViewModel.username, id: "user")
+                credentialRow("토큰 (비밀번호)", model.token, id: "token")
+                Text("리눅스에서 sbp up 첫 실행 때 이 토큰을 한 번 입력하면 저장됩니다.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            } else {
+                Text("NO AUTH: 설정에서 꺼져 있음").font(.subheadline).foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func credentialRow(_ label: String, _ value: String, id: String) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label).font(.caption).foregroundStyle(.secondary)
+                Text(value).font(.body.monospaced().weight(.semibold)).textSelection(.enabled)
+            }
+            Spacer()
+            Button {
+                UIPasteboard.general.string = value
+                copiedID = id
+            } label: {
+                Image(systemName: copiedID == id ? "checkmark" : "doc.on.doc")
+            }
+            .buttonStyle(.bordered)
+        }
     }
 
     // MARK: Address
@@ -97,7 +138,7 @@ struct ContentView: View {
                     }
                 }
             }
-            Text("SOCKS5 · 인증 없음 · CONNECT / UDP ASSOCIATE")
+            Text(model.authEnabled ? "SOCKS5 · 사용자/비밀번호 · CONNECT / UDP ASSOCIATE" : "SOCKS5 · 인증 없음 · CONNECT / UDP ASSOCIATE")
                 .font(.caption2).foregroundStyle(.secondary)
         }
     }
@@ -196,6 +237,35 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct SettingsSheet: View {
+    @ObservedObject var model: RelayViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Toggle("인증 사용 (권장)", isOn: $model.authEnabled)
+                } footer: {
+                    Text("끄면 NO AUTH로 동작합니다. 같은 네트워크의 누구나 접속할 수 있습니다.")
+                }
+                Section {
+                    Button("새 토큰 생성", role: .destructive) { model.regenerateToken() }
+                } footer: {
+                    Text("기존 토큰으로 페어링된 기기는 다시 입력해야 합니다.")
+                }
+                Section("정보") {
+                    LabeledContent("버전", value: RelayViewModel.appVersion)
+                    LabeledContent("Bonjour", value: RelayViewModel.serviceType)
+                    LabeledContent("상태 API", value: ":\(StatusServer.defaultPort)/status")
+                }
+            }
+            .navigationTitle("설정")
+            .toolbar { Button("완료") { dismiss() } }
+        }
     }
 }
 

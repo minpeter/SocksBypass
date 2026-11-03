@@ -48,6 +48,46 @@ final class RelayViewModel: ObservableObject {
 
     var activeTotal: Int { activeTCP + activeUDP }
 
+    static let username = "sbp"
+    static let serviceType = "_socksbypass._tcp"
+    static let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+
+    /// SOCKS5 username/password auth (password = token). On by default; NO AUTH
+    /// is only reachable through the settings sheet.
+    @Published var authEnabled: Bool = UserDefaults.standard.object(forKey: "authEnabled") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(authEnabled, forKey: "authEnabled")
+            restartIfRunning()
+        }
+    }
+    @Published private(set) var token: String = RelayViewModel.loadToken()
+
+    func regenerateToken() {
+        token = Self.makeToken()
+        UserDefaults.standard.set(token, forKey: "token")
+        restartIfRunning()
+    }
+
+    private static func loadToken() -> String {
+        if let saved = UserDefaults.standard.string(forKey: "token"), !saved.isEmpty { return saved }
+        let fresh = makeToken()
+        UserDefaults.standard.set(fresh, forKey: "token")
+        return fresh
+    }
+
+    static func makeToken() -> String {
+        let alphabet = Array("abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+        var rng = SystemRandomNumberGenerator()
+        return String((0..<20).map { _ in alphabet.randomElement(using: &rng)! })
+    }
+
+    private func restartIfRunning() {
+        guard case .listening = status else { return }
+        stop()
+        relay.stop { [weak self] in Task { @MainActor in self?.start() } }
+    }
+
+    private let statusServer = StatusServer()
     private let relay = NetworkTCPRelay(countingEnabled: true)
     private let keepAlive = BackgroundKeepAlive()
     private var timer: Timer?
@@ -68,6 +108,7 @@ final class RelayViewModel: ObservableObject {
         keepAlive.stop()
         backgroundActive = false
         isStopping = true
+        statusServer.stop()
         relay.stop { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -120,7 +161,17 @@ final class RelayViewModel: ObservableObject {
                 self.append(Self.describe(event))
             }
         }
-        relay.start { [weak self] result in
+        let credentials = authEnabled
+            ? Socks5HandshakeParser.Credentials(username: Self.username, password: token)
+            : nil
+        let txt = [
+            "v": Self.appVersion,
+            "auth": authEnabled ? "1" : "0",
+            "user": Self.username,
+            "status": String(StatusServer.defaultPort),
+        ]
+        let statusToken = authEnabled ? token : nil
+        relay.start(credentials: credentials, bonjour: (Self.serviceType, txt)) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 switch result {
@@ -128,6 +179,7 @@ final class RelayViewModel: ObservableObject {
                     self.status = .listening(port: port)
                     self.endpoints = Self.localEndpoints()
                     self.append("listening on \(port)")
+                    self.statusServer.start(token: statusToken)
                     self.keepAlive.start()
                     self.append(self.keepAlive.isActive
                                 ? "background audio holding the app awake"
@@ -201,6 +253,17 @@ final class RelayViewModel: ObservableObject {
                 self.downloadBytes = snapshot.downloadBytes
                 self.activeTCP = snapshot.activeTCP
                 self.activeUDP = snapshot.activeUDP
+                self.statusServer.update([
+                    "running": self.isRunning,
+                    "version": Self.appVersion,
+                    "auth": self.authEnabled,
+                    "uploadBytesPerSecond": self.uploadBytesPerSecond,
+                    "downloadBytesPerSecond": self.downloadBytesPerSecond,
+                    "uploadBytes": snapshot.uploadBytes,
+                    "downloadBytes": snapshot.downloadBytes,
+                    "activeTCP": snapshot.activeTCP,
+                    "activeUDP": snapshot.activeUDP,
+                ])
             }
         }
     }
