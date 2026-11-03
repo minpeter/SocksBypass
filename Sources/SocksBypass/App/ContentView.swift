@@ -53,7 +53,7 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("SocksBypass").font(G.sans(28, .semibold)).tracking(-1)
+                Text("Hotline").font(G.sans(28, .semibold)).tracking(-1)
                 Text("v\(RelayViewModel.appVersion)").font(G.mono(12)).foregroundStyle(G.muted)
             }
             Spacer()
