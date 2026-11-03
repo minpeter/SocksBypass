@@ -5,7 +5,7 @@
     <key>CFBundleDisplayName</key>
     <string>SocksBypass</string>
     <key>CFBundleShortVersionString</key>
-    <string>2.2.0</string>
+    <string>2.3.0</string>
     <key>UIBackgroundModes</key>
     <array>
         <string>audio</string>

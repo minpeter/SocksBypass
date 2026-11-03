@@ -1,145 +1,144 @@
 import SwiftUI
 import UIKit
 
+/// Geist-like palette: monochrome, 1px hairlines, no shadows or gradients.
+private enum G {
+    static let fg = Color.primary
+    static let muted = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.63, alpha: 1) : UIColor(white: 0.40, alpha: 1) })
+    static let border = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor(white: 0.92, alpha: 1) })
+    static let subtle = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.04, alpha: 1) : UIColor(white: 0.98, alpha: 1) })
+    static let bg = Color(UIColor { $0.userInterfaceStyle == .dark ? .black : .white })
+    static let green = Color(red: 0, green: 0.67, blue: 0.47)
+    static let red = Color(red: 0.9, green: 0.2, blue: 0.2)
+    static let radius: CGFloat = 10
+    static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font { .system(size: size, weight: weight, design: .monospaced) }
+}
+
 struct ContentView: View {
     @ObservedObject var model: RelayViewModel
     @State private var copiedID: String?
     @State private var showSettings = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    statusCard
-                    warningCard
-                    if case .listening(let port) = model.status {
-                        addressCard(port: port)
-                    }
-                    credentialsCard
-                    trafficCard
-                    sessionsCard
-                    activityCard
-                }
-                .padding()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                header
+                statusLine.padding(.bottom, 8)
+                if case .listening(let port) = model.status { addressCard(port: port) }
+                credentialsCard
+                metricsGrid
+                warning
+                activity
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("SocksBypass")
-            .safeAreaInset(edge: .bottom) { controlButton }
-            .toolbar {
-                Button { showSettings = true } label: { Image(systemName: "gearshape") }
-            }
-            .sheet(isPresented: $showSettings) { SettingsSheet(model: model) }
+            .padding(.horizontal, 24)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
         }
+        .background(G.bg.ignoresSafeArea())
+        .foregroundStyle(G.fg)
+        .safeAreaInset(edge: .bottom) { controlButton }
+        .sheet(isPresented: $showSettings) { SettingsSheet(model: model) }
     }
 
-    // MARK: Status
+    // MARK: Header / status
 
-    private var statusInfo: (String, String, Color) {
+    private var header: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("SocksBypass").font(.system(size: 28, weight: .semibold)).tracking(-1)
+                Text("v\(RelayViewModel.appVersion)").font(G.mono(12)).foregroundStyle(G.muted)
+            }
+            Spacer()
+            Button { showSettings = true } label: {
+                Image(systemName: "gearshape").font(.system(size: 15)).foregroundStyle(G.muted)
+                    .frame(width: 34, height: 34)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(G.border, lineWidth: 1))
+            }
+        }
+        .padding(.bottom, 8)
+    }
+
+    private var statusInfo: (String, Color) {
         switch model.status {
-        case .stopped: return ("중지됨", "stop.circle.fill", .gray)
-        case .starting: return ("시작 중…", "hourglass.circle.fill", .orange)
-        case .listening: return ("실행 중", "checkmark.circle.fill", .green)
-        case .failed(let reason): return ("오류: \(reason)", "exclamationmark.octagon.fill", .red)
+        case .stopped: return ("중지됨", G.muted)
+        case .starting: return ("시작 중", G.muted)
+        case .listening: return ("실행 중", G.green)
+        case .failed(let reason): return ("오류 · \(reason)", G.red)
         }
     }
 
-    private var statusCard: some View {
-        let (title, icon, color) = statusInfo
-        return card {
-            HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.system(size: 40))
-                    .foregroundStyle(color)
-                    .symbolEffect(.pulse, isActive: model.status == .starting)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.title2.bold())
-                    Label(model.backgroundActive ? "백그라운드 유지 중 (잠금/닫아도 계속)" : "포그라운드에서만 동작",
-                          systemImage: model.backgroundActive ? "moon.fill" : "sun.max")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
+    private var statusLine: some View {
+        let (text, color) = statusInfo
+        return HStack(spacing: 8) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(text).font(.system(size: 14, weight: .medium))
+            if model.isRunning {
+                Text(model.backgroundActive ? "· 백그라운드 유지" : "· 포그라운드에서만")
+                    .font(.system(size: 14)).foregroundStyle(G.muted)
             }
         }
     }
 
-    /// Always visible, never dismissible. Louder when auth is off.
-    private var warningCard: some View {
-        let open = !model.authEnabled
-        let tint: Color = open ? .red : .orange
-        return HStack(alignment: .top, spacing: 10) {
-            Image(systemName: open ? "lock.open.trianglebadge.exclamationmark" : "exclamationmark.triangle.fill")
-                .foregroundStyle(tint)
-            Text(open
-                 ? "인증이 꺼져 있습니다(NO AUTH). 이 주소에 닿을 수 있는 누구나 이 휴대폰 회선으로 트래픽을 보낼 수 있습니다. 내 핫스팟에서만 쓰세요."
-                 : "토큰이 있는 사람만 접속할 수 있지만 트래픽은 암호화되지 않습니다. 내 휴대폰 핫스팟처럼 직접 관리하는 네트워크에서만 켜세요.")
-                .font(.footnote)
+    // MARK: Cards
+
+    private func card<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.system(size: 12)).tracking(0.6).foregroundStyle(G.muted)
+            content()
         }
-        .padding()
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(tint.opacity(0.4)))
+        .overlay(RoundedRectangle(cornerRadius: G.radius).stroke(G.border, lineWidth: 1))
+    }
+
+    private var hairline: some View { Rectangle().fill(G.border).frame(height: 1) }
+
+    private func addressCard(port: UInt16) -> some View {
+        card("주소") {
+            if model.endpoints.isEmpty {
+                Text("접속 가능한 주소가 없습니다. 핫스팟이나 Wi-Fi를 켜세요.")
+                    .font(.system(size: 13)).foregroundStyle(G.muted)
+            } else {
+                ForEach(Array(model.endpoints.enumerated()), id: \.element.id) { index, endpoint in
+                    if index > 0 { hairline }
+                    copyRow(roleLabel(endpoint.role), "\(endpoint.address):\(String(port))", id: endpoint.id, size: 18)
+                }
+            }
+        }
     }
 
     private var credentialsCard: some View {
-        card(title: "인증", icon: "key.fill") {
+        card("인증") {
             if model.authEnabled {
-                credentialRow("사용자", RelayViewModel.username, id: "user")
-                credentialRow("토큰 (비밀번호)", model.token, id: "token")
-                Text("리눅스에서 sbp up 첫 실행 때 이 토큰을 한 번 입력하면 저장됩니다.")
-                    .font(.caption2).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("사용자").font(.system(size: 12)).foregroundStyle(G.muted)
+                    Text(RelayViewModel.username).font(G.mono(15))
+                }
+                copyRow("토큰", model.token, id: "token", size: 15)
             } else {
-                Text("NO AUTH: 설정에서 꺼져 있음").font(.subheadline).foregroundStyle(.red)
+                HStack(spacing: 8) {
+                    Circle().fill(G.red).frame(width: 8, height: 8)
+                    Text("NO AUTH · 설정에서 꺼짐").font(G.mono(14))
+                }
             }
         }
     }
 
-    private func credentialRow(_ label: String, _ value: String, id: String) -> some View {
+    private func copyRow(_ label: String, _ value: String, id: String, size: CGFloat) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(.caption).foregroundStyle(.secondary)
-                Text(value).font(.body.monospaced().weight(.semibold)).textSelection(.enabled)
+                Text(label).font(.system(size: 12)).foregroundStyle(G.muted)
+                Text(value).font(G.mono(size, .medium)).textSelection(.enabled).lineLimit(1).minimumScaleFactor(0.7)
             }
             Spacer()
             Button {
                 UIPasteboard.general.string = value
                 copiedID = id
             } label: {
-                Image(systemName: copiedID == id ? "checkmark" : "doc.on.doc")
+                Text(copiedID == id ? "복사됨" : "복사").font(.system(size: 13, weight: .medium)).foregroundStyle(G.fg)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(G.border, lineWidth: 1))
             }
-            .buttonStyle(.bordered)
-        }
-    }
-
-    // MARK: Address
-
-    private func addressCard(port: UInt16) -> some View {
-        card(title: "접속 주소", icon: "network") {
-            if model.endpoints.isEmpty {
-                Text("접속 가능한 주소가 없습니다. 핫스팟이나 Wi-Fi를 켜세요.")
-                    .font(.subheadline).foregroundStyle(.orange)
-            } else {
-                ForEach(model.endpoints) { endpoint in
-                    let text = "\(endpoint.address):\(String(port))"
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(roleLabel(endpoint.role)).font(.caption).foregroundStyle(.secondary)
-                            Text(text).font(.title3.monospaced().weight(.semibold)).textSelection(.enabled)
-                        }
-                        Spacer()
-                        Button {
-                            UIPasteboard.general.string = text
-                            copiedID = endpoint.id
-                        } label: {
-                            Label(copiedID == endpoint.id ? "복사됨" : "복사",
-                                  systemImage: copiedID == endpoint.id ? "checkmark" : "doc.on.doc")
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-            }
-            Text(model.authEnabled ? "SOCKS5 · 사용자/비밀번호 · CONNECT / UDP ASSOCIATE" : "SOCKS5 · 인증 없음 · CONNECT / UDP ASSOCIATE")
-                .font(.caption2).foregroundStyle(.secondary)
         }
     }
 
@@ -151,39 +150,61 @@ struct ContentView: View {
         }
     }
 
-    // MARK: Traffic
-
-    private var trafficCard: some View {
-        card(title: "트래픽", icon: "arrow.up.arrow.down") {
-            HStack(spacing: 12) {
-                metric("업로드", ByteFormat.rate(model.uploadBytesPerSecond),
-                       sub: "누적 \(ByteFormat.size(model.uploadBytes))", icon: "arrow.up", color: .blue)
-                metric("다운로드", ByteFormat.rate(model.downloadBytesPerSecond),
-                       sub: "누적 \(ByteFormat.size(model.downloadBytes))", icon: "arrow.down", color: .green)
+    private var metricsGrid: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                cell("↑ 업로드", ByteFormat.rate(model.uploadBytesPerSecond), ByteFormat.size(model.uploadBytes))
+                Rectangle().fill(G.border).frame(width: 1)
+                cell("↓ 다운로드", ByteFormat.rate(model.downloadBytesPerSecond), ByteFormat.size(model.downloadBytes))
+            }
+            hairline
+            HStack(spacing: 0) {
+                cell("TCP", String(model.activeTCP), nil)
+                Rectangle().fill(G.border).frame(width: 1)
+                cell("UDP", String(model.activeUDP), nil)
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
+        .overlay(RoundedRectangle(cornerRadius: G.radius).stroke(G.border, lineWidth: 1))
     }
 
-    private var sessionsCard: some View {
-        card(title: "세션", icon: "point.3.connected.trianglepath.dotted") {
-            HStack(spacing: 12) {
-                metric("TCP", String(model.activeTCP), sub: nil, icon: "link", color: .purple)
-                metric("UDP", String(model.activeUDP), sub: nil, icon: "dot.radiowaves.up.forward", color: .pink)
-                metric("전체", String(model.activeTotal), sub: nil, icon: "sum", color: .indigo)
-            }
+    private func cell(_ label: String, _ value: String, _ sub: String?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.system(size: 12)).foregroundStyle(G.muted)
+            Text(value).font(G.mono(18, .medium)).lineLimit(1).minimumScaleFactor(0.6).contentTransition(.numericText())
+            if let sub { Text(sub).font(G.mono(12)).foregroundStyle(G.muted) }
         }
+        .padding(.horizontal, 16).padding(.vertical, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var activityCard: some View {
-        card(title: "활동 기록", icon: "list.bullet.rectangle") {
+    /// Always visible, never dismissible. Red text only when NO AUTH is on.
+    private var warning: some View {
+        let open = !model.authEnabled
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle").font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(open ? G.red : G.fg)
+            Text(open
+                 ? "인증이 꺼져 있습니다. 이 주소에 닿는 누구나 이 회선을 쓸 수 있습니다. 내 핫스팟에서만 사용하세요."
+                 : "트래픽은 암호화되지 않습니다. 직접 관리하는 핫스팟에서만 사용하세요.")
+                .font(.system(size: 13)).foregroundStyle(open ? G.red : G.muted)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(G.subtle, in: RoundedRectangle(cornerRadius: G.radius))
+        .overlay(RoundedRectangle(cornerRadius: G.radius).stroke(open ? G.red.opacity(0.5) : G.border, lineWidth: 1))
+    }
+
+    private var activity: some View {
+        card("활동") {
             if model.log.isEmpty {
-                Text("아직 기록이 없습니다").font(.subheadline).foregroundStyle(.secondary)
+                Text("—").font(G.mono(12)).foregroundStyle(G.muted)
             } else {
-                ForEach(model.log.reversed().prefix(15)) { entry in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(entry.at, format: .dateTime.hour().minute().second())
-                            .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                        Text(entry.text).font(.caption)
+                ForEach(model.log.reversed().prefix(8)) { entry in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(entry.at, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute().second())
+                            .font(G.mono(11)).foregroundStyle(G.muted)
+                        Text(entry.text).font(G.mono(12))
                         Spacer(minLength: 0)
                     }
                 }
@@ -194,49 +215,17 @@ struct ContentView: View {
     // MARK: Control
 
     private var controlButton: some View {
-        Button {
-            model.toggle()
-        } label: {
-            Label(model.isRunning ? "프록시 중지" : "프록시 시작",
-                  systemImage: model.isRunning ? "stop.fill" : "play.fill")
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
+        Button { model.toggle() } label: {
+            Text(model.isRunning ? "정지" : "시작")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(G.bg)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(G.fg, in: RoundedRectangle(cornerRadius: G.radius))
         }
-        .buttonStyle(.borderedProminent)
-        .tint(model.isRunning ? .red : .accentColor)
         .disabled(model.isStopping)
-        .padding(.horizontal)
-        .padding(.bottom, 8)
-        .background(.bar)
-    }
-
-    // MARK: Building blocks
-
-    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12, content: content)
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func card<Content: View>(title: String, icon: String,
-                                     @ViewBuilder _ content: () -> Content) -> some View {
-        card {
-            Label(title, systemImage: icon).font(.subheadline.bold()).foregroundStyle(.secondary)
-            content()
-        }
-    }
-
-    private func metric(_ label: String, _ value: String, sub: String?, icon: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label(label, systemImage: icon).font(.caption).foregroundStyle(color)
-            Text(value).font(.title3.monospacedDigit().bold()).lineLimit(1).minimumScaleFactor(0.6)
-            if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .opacity(model.isStopping ? 0.5 : 1)
+        .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 8)
+        .background(G.bg)
     }
 }
 
@@ -248,7 +237,7 @@ private struct SettingsSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Toggle("인증 사용 (권장)", isOn: $model.authEnabled)
+                    Toggle("인증 사용 (권장)", isOn: $model.authEnabled).tint(G.fg)
                 } footer: {
                     Text("끄면 NO AUTH로 동작합니다. 같은 네트워크의 누구나 접속할 수 있습니다.")
                 }
@@ -258,13 +247,14 @@ private struct SettingsSheet: View {
                     Text("기존 토큰으로 페어링된 기기는 다시 입력해야 합니다.")
                 }
                 Section("정보") {
-                    LabeledContent("버전", value: RelayViewModel.appVersion)
-                    LabeledContent("Bonjour", value: RelayViewModel.serviceType)
-                    LabeledContent("상태 API", value: ":\(StatusServer.defaultPort)/status")
+                    LabeledContent("버전") { Text(RelayViewModel.appVersion).font(G.mono(14)) }
+                    LabeledContent("Bonjour") { Text(RelayViewModel.serviceType).font(G.mono(14)) }
+                    LabeledContent("상태 API") { Text(":\(StatusServer.defaultPort)/status").font(G.mono(14)) }
                 }
             }
             .navigationTitle("설정")
-            .toolbar { Button("완료") { dismiss() } }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { Button("완료") { dismiss() }.tint(G.fg) }
         }
     }
 }
